@@ -49,6 +49,7 @@ class Platform_draw(Widget):
     def undo(self, instance):  #removes the last line placed and then redraws the screen
         if self.straight:
             self.lines = self.lines[:-1]
+        self.refresh_screen()
         
     def toggle_draw(self, instance): #stops the line from snapping to grid
         self.straight = False
@@ -82,7 +83,7 @@ class Platform_draw(Widget):
         self.grab = False
         self.lat = ()
         self.long = ()
-        self.zoom = 48
+        self.zoom = height/12
         self.x = self.y = 0
         self.color = (1, 1, 1)
         
@@ -180,7 +181,8 @@ class PlatformApp(App):
     def build(self):
         self.parent = Widget()
         self.main = Platform_draw()
-        self.main.lat, self.main.long, self.main.lines = set_zoom([], 48)
+        self.main.on_startup()
+        self.main.lat, self.main.long, self.main.lines = set_zoom([], self.main.zoom)
         
         #draws grid lines
         for x in self.main.lat:
@@ -189,7 +191,6 @@ class PlatformApp(App):
         for y in self.main.long:
             self.parent.canvas.add(Color(0, 0, 1))
             self.parent.canvas.add(Line(points = (0, y, width, y), width = 1))
-        self.main.on_startup()
         btncolor = ToggleButton(group = 'a', text = 'Color', pos = (0, 0), size = (self.main.zoom, self.main.zoom))
         
         # adds buttons to screen
