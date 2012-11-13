@@ -30,6 +30,15 @@ def snap_to(lines, zoom): #uses the remainder between the point and the zoom to 
         line[0] = line[0] - x
         line[1] = line[1] - y
     return lines
+    
+def refresh_grid(lat, long, parent):
+    for x in lat:
+        parent.canvas.add(Color(0, 0, 1))
+        parent.canvas.add(Line(points = (x, 0, x, height), width = 1))
+    for y in long:
+        parent.canvas.add(Color(0, 0, 1))
+        parent.canvas.add(Line(points = (0, y, width, y), width = 1))
+
 
 class Platform_draw(Widget):
     def color_change(self, instance): # function used to change the color of a line
@@ -129,7 +138,10 @@ class Platform_draw(Widget):
             pass
         elif self.straight:
             self.coord = [[touch.x, touch.y]]
+        elif self.scroll:
+            self.x = touch.x
         else: self.coord = 0
+        
         
     def on_touch_up(self, touch):
         if touch.y < self.zoom*2 and touch.x < self.zoom*6:
@@ -157,7 +169,11 @@ class Platform_draw(Widget):
             
                 
         elif self.scroll:
-            pass
+            for x in self.lat:
+                x += (touch.x - self.x)
+            refresh_grid(self.lat, self.long, self)
+            self.x = touch.x
+            
             
             
 
@@ -184,13 +200,8 @@ class PlatformApp(App):
         self.main.on_startup()
         self.main.lat, self.main.long, self.main.lines = set_zoom([], self.main.zoom)
         
-        #draws grid lines
-        for x in self.main.lat:
-            self.parent.canvas.add(Color(0, 0, 1))
-            self.parent.canvas.add(Line(points = (x, 0, x, height), width = 1))
-        for y in self.main.long:
-            self.parent.canvas.add(Color(0, 0, 1))
-            self.parent.canvas.add(Line(points = (0, y, width, y), width = 1))
+        # draws grid
+        refresh_grid(self.main.lat, self.main.long, self.parent)
         btncolor = ToggleButton(group = 'a', text = 'Color', pos = (0, 0), size = (self.main.zoom, self.main.zoom))
         
         # adds buttons to screen
