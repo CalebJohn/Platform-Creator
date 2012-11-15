@@ -19,9 +19,9 @@ def set_zoom(lines, zoom=48): #repopulates lists based on zoom level
         snap_to(line, zoom)
     return lat, long, lines
     
-def snap_to(lines, zoom): #uses the remainder between the point and the zoom to calculate where the point should snap to
+def snap_to(lines, zoom, lat): #uses the remainder between the point and the zoom to calculate where the point should snap to
     for line in lines:
-        x = line[0] % zoom
+        x = (line[0] % zoom) - min(*lat)
         y = line[1] % zoom
         if x >= zoom / 2:
             x = -(zoom - x)
@@ -30,15 +30,6 @@ def snap_to(lines, zoom): #uses the remainder between the point and the zoom to 
         line[0] = line[0] - x
         line[1] = line[1] - y
     return lines
-    
-def refresh_grid(lat, long, parent):
-    for x in lat:
-        parent.canvas.add(Color(0, 0, 1))
-        parent.canvas.add(Line(points = (x, 0, x, height), width = 1))
-    for y in long:
-        parent.canvas.add(Color(0, 0, 1))
-        parent.canvas.add(Line(points = (0, y, width, y), width = 1))
-
 
 class Platform_draw(Widget):
     def color_change(self, instance): # function used to change the color of a line
@@ -93,7 +84,7 @@ class Platform_draw(Widget):
         self.lat = ()
         self.long = ()
         self.zoom = height/12
-        self.x = self.y = 0
+        self.old_x = self.old_y = 0
         self.color = (1, 1, 1)
         
         #creates all buttons used
@@ -122,12 +113,22 @@ class Platform_draw(Widget):
         self.btnm.bind(on_release = self.toggle_scroll)
         self.btnc.bind(on_release = self.toggle_grab)
         
-        #calculates the grid used then refreshes screen
-        # self.lat, self.long, self.lines = set_zoom(self.lines, self.zoom)
-        # self.refresh_screen()
+        #refreshes screen ... just lateral lines
+        self.lat, self.long, self.lines = set_zoom([], self.zoom)
+        self.refresh_screen()
+        
     def refresh_screen(self):
         self.canvas.clear()
+        
+        for x in self.lat:
+            self.canvas.add(Color(0, 0, 1))
+            self.canvas.add(Line(points = (x, 0, x, height), width = 1))
             
+        if min(*self.lat) < 0:
+            self.lat[self.lat.index(min(*self.lat))] = max(*self.lat) + self.zoom
+        if max(*self.lat) > width:
+            self.lat[self.lat.index(max(*self.lat))] = min(*self.lat) - self.zoom
+        
         #draws lines that the user has drawn
         for line in self.lines:
             self.canvas.add(Color(*line[1]))
@@ -138,17 +139,15 @@ class Platform_draw(Widget):
             pass
         elif self.straight:
             self.coord = [[touch.x, touch.y]]
-        elif self.scroll:
-            self.x = touch.x
         else: self.coord = 0
-        
+        self.old_x = touch.x
         
     def on_touch_up(self, touch):
         if touch.y < self.zoom*2 and touch.x < self.zoom*6:
             pass
         elif self.straight and self.coord:
             self.coord.append([touch.x, touch.y]) #defines end point of new line
-            self.coord = snap_to(self.coord, self.zoom) #moves points onto grid
+            self.coord = snap_to(self.coord, self.zoom, self.lat) #moves points onto grid
             line = [Line(points = (self.coord[0][0], self.coord[0][1], self.coord[1][0], self.coord[1][1]), width = 2), self.color]
             self.lines.append(line)
             self.coord = []
@@ -166,19 +165,20 @@ class Platform_draw(Widget):
             line = Line(points = (self.x, self.y, touch.x, touch.y), width = 1)  #draws a line that follows the users finger
             self.canvas.add(line)
             self.x, self.y = touch.x, touch.y #updates points
-            
-                
+             
         elif self.scroll:
-            for x in self.lat:
-                x += (touch.x - self.x)
-            refresh_grid(self.lat, self.long, self)
-            self.x = touch.x
-            
+            for line in range(len(self.lines)):
+                points = (self.lines[line][0].points[0] + (touch.x - self.old_x), self.lines[line][0].points[1], self.lines[line][0].points[2] + (touch.x - self.old_x), self.lines[line][0].points[3])
+                self.lines[line][0] = Line(points = points, width = 2)
+            for line in range(len(self.lat)):
+                self.lat[line] += touch.x-self.old_x
+            self.refresh_screen()
+            self.old_x = touch.x
             
             
 
 class PlatformApp(App):
-    def color_toggle(self, instance): # def function that raises buttons
+    def color_toggle(self, instance): # define function that raises buttons
         if instance.state == 'down':
             self.parent.add_widget(self.main.btnw)
             self.parent.add_widget(self.main.btnr)
@@ -200,8 +200,10 @@ class PlatformApp(App):
         self.main.on_startup()
         self.main.lat, self.main.long, self.main.lines = set_zoom([], self.main.zoom)
         
-        # draws grid
-        refresh_grid(self.main.lat, self.main.long, self.parent)
+        #draws grid lines
+        for y in self.main.long:
+            self.parent.canvas.add(Color(0, 0, 1))
+            self.parent.canvas.add(Line(points = (0, y, width, y), width = 1))
         btncolor = ToggleButton(group = 'a', text = 'Color', pos = (0, 0), size = (self.main.zoom, self.main.zoom))
         
         # adds buttons to screen
