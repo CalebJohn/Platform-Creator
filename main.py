@@ -1,187 +1,342 @@
 import kivy
-kivy.require('1.4.1')
+kivy.require('1.0.6')
+from kivy.core.image import Image
 from kivy.core.window import Window
 from kivy.app import App
+from kivy.config import ConfigParser
+from kivy.graphics import Line, Color, Ellipse, Rectangle, Rotate
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.togglebutton import ToggleButton
-from kivy.clock import Clock
-from kivy.graphics import Line, Color, Ellipse, Rectangle, Point
-from kivy.graphics.texture import Texture
+from kivy.uix.filechooser import FileChooserListView
+from kivy.uix.label import Label
+from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
+from kivy.uix.slider import Slider
+from kivy.uix.textinput import TextInput
+from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.widget import Widget
 import tmxlib
-from kivy.core.image import Image
+from tileset import Tileset
+from extras import Drawable, Polyline
+
 width, height = Window.size
 # Window.clearcolor = (1, 1, 1, 1)
 
-
-def set_zoom(lines, zoom=(48, 48), old_zoom=(48, 48)): #repopulates lists based on zoom level
-    lat = range(0,width, zoom[0])
-    long = range(0, height, zoom[1])
-    lines = change_zoom(lines, zoom, old_zoom)
-    return lat, long, lines
+def set_zoom(lines, zoom=(50, 50), old_zoom=(50, 50), lat=None, longit=None): #repopulates lists based on zoom level
+    if lat != None and longit != None:
+        offx = float(min(*lat))
+        offy = float(min(*longit))
+    else:
+        offx = 0
+        offy = 0
+    lat = range(0, width, zoom[0])
+    longit = range(0, height, zoom[1])
+    # for line in lines:
+        # line.translate(zoom, old_zoom, offx, offy)
+    lines = change_zoom(lines, zoom, old_zoom, offx, offy)
+    return lat, longit, lines
     
-def change_zoom(lines, zoom, ozoom): # changes the size of all the lines to reflect zoom
-    facx = zoom[0]/float(ozoom[1])
-    facy = zoom[1]/float(ozoom[1])
-    for line in range(len(lines)):
-        points = (lines[line][0].points[0]*facx, lines[line][0].points[1]*facy, lines[line][0].points[2]*facx, lines[line][0].points[3]*facy)
-        lines[line][0] = Line(points = points, width = 2)
-    return lines
-    
-def snap_to(lines, zoom, lat): #uses the remainder between the point and the zoom to calculate where the point should snap to
+def change_zoom(lines, zoom, ozoom, offx, offy): # changes the size of all the lines to reflect zoom
+    # facx = zoom[0] / float(ozoom[1])
+    # facy = zoom[1] / float(ozoom[1])
+    # for line in range(len(lines)):
+        # points = (lines[line][0].points[0]*facx - offx, lines[line][0].points[1]*facy - offy, lines[line][0].points[2]*facx - offx, lines[line][0].points[3]*facy - offy)
+        # lines[line][0] = Line(points = points, width = 2)
     for line in lines:
-        x = (line[0] % zoom[0]) - min(*lat)
-        y = line[1] % zoom[1]
-        if x >= zoom[0] / 2:
-            x = -(zoom[0] - x)
-        if y >= zoom[1] / 2:
-            y = -(zoom[1] - y)
-        line[0] = line[0] - x
-        line[1] = line[1] - y
+        line.translate(zoom, ozoom, offx, offy)
     return lines
-def snap_image(pos, zoom, lat): # snaps an image to the top left of a box
-    x = (pos[0] % zoom[0]) - min(*lat)
-    y = pos[1] % zoom[1]
-    pos[0] = pos[0] - x
-    pos[1] = pos[1] - y
-    return pos
     
 def check_erase(pos, lines, drawn_lines): # checks to see if the eraser is colliding with any lines
-    eraser = Widget(pos = pos, size = (height/18, height/18))
-    for line in range(len(lines)):
-        if (eraser.collide_point(lines[line][0].points[0], lines[line][0].points[1])
-        or eraser.collide_point(lines[line][0].points[2], lines[line][0].points[3])):
-            del lines[line]
-            return
-    for line in range(len(drawn_lines)):
-        if (eraser.collide_point(drawn_lines[line][0].points[0], drawn_lines[line][0].points[1])
-        or eraser.collide_point(drawn_lines[line][0].points[2], drawn_lines[line][0].points[3])):
-            del drawn_lines[line]
-            return
-
-class Platform_draw(Widget):
-    def color_change(self, instance): # function used to change the color of a line
-        if instance.text == 'White':
-            self.color = (1, 1, 1)
-        elif instance.text == 'Red':
-            self.color = (1, 0, 0)
-        elif instance.text == 'Blue':
-            self.color = (0, 0, 1)
-        elif instance.text == 'Yellow':
-            self.color = (1, 1, 0)
-        elif instance.text == 'Green':
-            self.color = (0, 0.7, 0)
-        elif instance.text == 'Brown':
-            self.color = (0.5, 0.25, 0.25)
+    eraser = Widget(pos = pos, size = (height/14, height/14))
+    for line in lines:
+        if line.collide(eraser):
+            del lines[lines.index(line)]
             
-    def undo(self, instance):  #removes the last line placed and then redraws the screen
-        self.lines = self.lines[:-1]
-        self.refresh_screen()
+def color_change(color, pos):
+    step = 0.1
+    if pos == 2:
+        if color[0] > 0.0:
+            color = (color[0] - step, 0.0, 1.0)
+        elif color[1] < 1.0:
+            color = (0.0, color[1] + step, 1.0)
+        else:
+            pos = 1
+            color = (0.0, 1.0, 1.0)
+    if pos == 1:
+        if color[2] > 0.0:
+            color = (0.0, 1.0, color[2] - step)
+        elif color[0] < 1.0:
+            color = (color[0] + step, 1.0, 0.0)
+        else:
+            pos = 0
+            color = (1.0, 1.0, 0.0)
+    if pos == 0:
+        if color[1] > 0.0:
+            color = (1.0, color[1] - step, 0.0)
+        else:
+            color = (1.0, 1.0, 1.0)
+    return color, pos
         
-    def load(self, instance):
-        self.map = tmxlib.Map.open(self.directory + '/' + 'test_old.tmx')
-        self.old_zoom = self.zoom
-        self.zoom = self.map.tile_size
-        self.lat, self.long, self.lines = set_zoom(self.lines, self.zoom, self.old_zoom) # changes the size of all lines
-        tile = self.map.tilesets[0][0].image.image # gets a random tile to access it values
-        x_inc = 0
-        y_inc = 0
-        max_tiles = (tile.size[0] / float(self.zoom[0]))*(tile.size[1] / float(self.zoom[1])) # gets total tiles in image
-        max_tiles = int(round(max_tiles))
-        self.tileset = Image(self.directory + '/' + tile.source)
-        for i in range(max_tiles):
-            if y_inc >= tile.size[1]:
-                x_inc += self.zoom[0] # adjust x and y for tile grab
-                y_inc = 0
-            texture = self.tileset.texture.get_region(x_inc, y_inc, self.zoom[0], self.zoom[1]) # creates texture from the tile at position x, y
-            y_inc += self.zoom[1]
-            self.tiles.append(texture) # adds to list of known tiles
+            
+def color_load():
+    colors = [(0.5, 0.25, 0.25)]
+    color = (1.0, 0.0, 1.0)
+    pos = 2
+    for i in range(1000):
+        color, pos = color_change(color, pos)
+        colors.append(color)
+        if color == (1.0, 1.0, 1.0):
+            break
+    return colors
+
+def get_directory(source):
+    b = source.split('\\')
+    if len(source) == 1:
+        b = source.split('/')
+    b = b[-1]
+    return source[:-len(b)]    
+    
+class UI(Widget):
+    def value_change(self, instance, touch): # the function for showing color change on slider
+        if touch.x < instance.pos[0]:
+            return
+        self.grid.color = self.grid.colors[int(instance.value)]
+        self.canvas.add(Color(*self.grid.color))
+        self.canvas.add(Rectangle(size = (width/2, height/2), pos = (0, height/4)))
+        self.add_widget(Label(text = str(int(instance.value)), color = (0, 0, 0, 1), font_size=height/12, pos = (height/12, height/2)))
+        self.grid.coord = []
+        self.grid.x = self.grid.y = 0
         
-        self.refresh_screen()
+    def tile_change(self, instance, touch): # function for showing tile change on slider
+        if len(self.grid.tiles) < 1:
+            self.add_widget(Label(text = 'No Tileset', color = (0, 0, 1, 1), font_size=height/12, pos = (height/10, height/2)))
+            return
+        self.tile_slider.max = len(self.grid.tiles)-1
+        if touch.x < instance.pos[0]:
+            return
+        self.grid.currentTile = int(instance.value)
+        self.grid.canvas.add(Color())
+        size = self.grid.tiles[self.grid.currentTile].size
+        off = (height/2) / size[1]
+        size = (size[0] * off, size[1] * off)
+        self.grid.canvas.add(Rectangle(texture = self.grid.tiles[self.grid.currentTile].tile, size = size, pos = (width/2-height/4, height/2 - height/4)))
+        self.grid.coord = []
+        self.grid.x = self.grid.y = 0
+    
+    def value_zoom(self, instance, touch):
+        if touch.y > height-height/12:
+            old_zoom = self.grid.zoom
+            self.grid.zoom = (int(instance.value), int(instance.value))
+            self.grid.lat, self.grid.longit, self.grid.lines = set_zoom(self.grid.lines, self.grid.zoom, old_zoom, self.grid.lat, self.grid.longit) # changes the size of all lines
+            self.grid.coord = []
+            self.grid.x = self.grid.y = 0
+            self.grid.refresh_screen()
+            
+    def create_view(self, message):
+        view = ModalView(size_hint=(0.15, 0.05))
+        view.add_widget(Label(text = message))
+        view.open()
+        
+    def load(self, instance, selection, touch):
+        self.map = tmxlib.Map.open(str(selection[0]))
+        old_zoom = self.grid.zoom
+        self.grid.zoom = self.map.tile_size
+        self.upper.zoom_slider.value = self.grid.zoom[0]
+        self.grid.lat, self.grid.longit, self.grid.lines = set_zoom(self.grid.lines, self.grid.zoom, old_zoom) # changes the size of all lines
+        self.grid.tiles = []
+        self.grid.currentTile = 0
+        self.grid.currentLayer = 0
+        for tileset in self.map.tilesets:
+            tile = tileset[0].image.image # gets a random tile to access it values
+            self.grid.tileset = get_directory(selection[0]) + tile.source
+            tileset = Tileset(tileset.name, tileset.tile_width, tileset.tile_height, self.grid.tileset, self.grid.zoom)
+
+            for tile in tileset.tiles_list():
+                self.grid.tiles.append(tile)
+            
+        for layer in self.map.layers:
+            for tile in layer.all_tiles():
+                if tile.image != None:
+                    for til in self.grid.tiles:
+                        if til.top_left == tile.image.top_left:
+                            size = [til.size[0] * self.grid.zoom[0], til.size[1] * self.grid.zoom[1]]
+                            pos = [(tile.pos[0] + 1) * self.grid.zoom[0], (self.map.height - tile.pos[1] - 1) * self.grid.zoom[1]]
+                            if tile.flipped_horizontally:
+                                size[0] *= -1
+                                pos[0] -= size[0]
+                            if tile.flipped_vertically:
+                                size[1] *= -1
+                                pos[1] -= size[1]
+                            if tile.flipped_diagonally:
+                                size[0] *= -1
+                                size[1] *= -1
+                                pos[0] -= size[0]
+                                pos[1] -= size[1]
+                            rec  = Drawable(Rectangle, color = None, texture = til.tile, pos = pos, size = size)
+                            rec.snap(list(pos), self.grid.zoom, self.grid.lat, self.grid.longit)
+                            self.grid.lines.append(rec)
+
+        self.popup.dismiss()
+        self.grid.refresh_screen()
+        
+    def tmx_tileset(self, instance):
+        content = BoxLayout(orientation = 'vertical')
+        tmxbtn = Button(text = 'Map')
+        tilesetbtn = Button(text = 'Tileset')
+        
+        tmxbtn.bind(on_release = self.load_tmx)
+        tilesetbtn.bind(on_release = self.image_def)
+        
+        content.add_widget(tmxbtn)
+        content.add_widget(tilesetbtn)
+        
+        self.popup.title = "Load"
+        self.popup.content = content
+        
+    def load_tmx(self, instance):
+        content = BoxLayout(orientation = 'vertical')
+        filechooser = FileChooserListView(filters = ['*.tmx'], path = self.upper.directory)
+        
+        filechooser.bind(on_submit = self.load)
+        
+        content.add_widget(filechooser)
+        
+        self.popup.size_hint = (0.7, 0.7)
+        self.popup.content = content
+        
+    def image_def(self, instance):
+        content = BoxLayout(orientation = 'vertical', spacing = 5)
+        self.name_input = TextInput(text = 'Name of Tileset', focus = True, size_hint = (1, None), size = (10, 50))
+        self.width_input = TextInput(text = 'Tile Width', size_hint = (1, None), size = (10, 50))
+        self.height_input = TextInput(text = 'Tile Height', size_hint = (1, None), size = (10, 50))
+        get_file = Button(text = 'Load Image')
+        
+        content.add_widget(self.name_input)
+        content.add_widget(self.width_input)
+        content.add_widget(self.height_input)
+        content.add_widget(get_file)
+        
+        get_file.bind(on_release = self.load_image)
+        
+        self.popup.size_hint = (0.5, 0.5)
+        self.popup.title = 'Tileset'
+        self.popup.content = content
+        
+    def loadImage(self, instance, selection, touch):
+        old_zoom = self.grid.zoom
+        self.grid.zoom = [int(self.width_input.text), int(self.height_input.text)]
+        tileset = Tileset(self.name_input.text, self.width_input.text, self.height_input.text, selection[0], self.grid.zoom)
+        self.upper.zoom_slider.value = self.grid.zoom[0]
+        self.grid.lat, self.grid.longit, self.grid.lines = set_zoom(self.grid.lines, self.grid.zoom, old_zoom) # changes the size of all lines
+        for tile in tileset.tiles_list():
+            self.grid.tiles.append(tile)
+          
+        self.popup.dismiss()
+        self.grid.refresh_screen()
+        
+    def load_image(self, instance):
+        content = BoxLayout(orientation = 'vertical')
+        filechooser = FileChooserListView(filters = ['*.png', '*.bmp', '*.jpg'], path = self.upper.directory)
+        
+        filechooser.bind(on_submit = self.loadImage)
+        
+        content.add_widget(filechooser)
+        
+        self.popup.size_hint = (0.7, 0.7)
+        self.popup.content = content
+    
     def save(self, instance):
-        self.map.save(self.directory + '/' + 'test.tmx')
+        self.map.tilesets.insert(0, tmxlib.Tileset('tileset', self.grid.zoom, self.grid.tileset))
+        self.map.save(self.upper.directory + '/' + self.inbox.text)
+        self.popup.dismiss()
+        self.create_view('Map file saved')
+        
+    def get_filename(self, instance):
+        content = BoxLayout(orientation = 'vertical')
+        self.inbox = TextInput(text='example_filename.tmx', focus = True)
+        savebtn = Button(text='Save')
+        
+        savebtn.bind(on_release = self.save)
+        
+        content.add_widget(self.inbox)
+        content.add_widget(savebtn)
+        
+        self.popup.title = "Save"
+        self.popup.content = content
+        
     def save_load(self, instance):
-        self.content = BoxLayout(orientation = 'vertical')
+        content = BoxLayout(orientation = 'vertical')
         savebtn = Button(text = 'Save')
         loadbtn = Button(text = 'Load')
-        self.content.add_widget(savebtn)
-        self.content.add_widget(loadbtn)
-        savebtn.bind(on_release = self.save)
-        loadbtn.bind(on_release = self.load)
-        self.popup = Popup(text = 'Save/Load', content = self.content, size_hint = (0.5, 0.2))
+        content.add_widget(savebtn)
+        content.add_widget(loadbtn)
+        savebtn.bind(on_release = self.get_filename)
+        loadbtn.bind(on_release = self.tmx_tileset)
+        self.popup = Popup(title = 'Menu', content = content, size_hint = (0.5, 0.3))
         self.popup.open()
         
     def toggle_straight(self, instance): #gets the line to snap to grid
-        if self.old_x < width/4 and self.old_y > height/2:
-            self.straight_type = 'single'
+        if self.grid.old_x < width/4 and self.grid.old_y > height/2:
+            self.grid.straight_type = 'single'
         else:
-            self.straight_type = 'poly'
-        self.refresh_screen()
+            self.grid.straight_type = 'poly'
+        self.canvas.clear()
         self.btnline.state = 'down'
     def select_type(self, instance): #for picking between single and poly lines
         self.canvas.add(Color(0, 0, 0, 0.6))
         self.canvas.add(Rectangle(size=(width, height)))
-        self.canvas.add(Color(*self.color))
+        self.canvas.add(Color(*self.grid.color))
         self.canvas.add(Line(points=(width/4, height, width/4, height/2.4), width=1))
         self.canvas.add(Line(points=(0, height/2.4, width/4, height/2.4), width=1))
         
+    def clear(self, *args):
+        self.canvas.clear()
+    
     def on_startup(self): #defines everything that needs to be defined before startup
         #defines variables to be used
-        self.lines = []
         self.al = BoxLayout(orientation = 'vertical', size=(height/12, height), pos = (0, 0))
+        self.ac = BoxLayout(orientation = 'vertical')
+        self.at = BoxLayout(orientation = 'vertical')
         self.ar = BoxLayout(orientation = 'vertical', size=(height/12, height), pos = (width-height/12, 0))
-        self.coord = []
-        self.drawn_lines = []
         self.straight_type = 'single'
-        self.lat = ()
-        self.long = ()
-        self.zoom = (height/12, height/12)
-        self.old_x = self.old_y = 0
-        self.x = self.y = 0
-        self.color = (1, 1, 1)
-        self.tiles = []
-        self.current_tile = 0
-        self.tileset = []
-        self.tile_list = []
+        self.size = (height/12, height/12)
+        self.map = tmxlib.Map.open(self.upper.directory + '/' + 'DefaultForLoading.tmx')
         
         #creates all buttons used
-        self.btnw = Button(text = 'White', size = self.zoom, size_hint = (None, None), background_color = (1, 1, 1, 0.8))
-        self.btnr = Button(text = 'Red', size = self.zoom, size_hint = (None, None), background_color = (1, 0, 0, 0.8))
-        self.btnb = Button(text = 'Blue', size = self.zoom, size_hint = (None, None), background_color = (0, 0, 1, 0.8))
-        self.btny = Button(text = 'Yellow', size = self.zoom, size_hint = (None, None), background_color = (1, 1, 0, 0.8))
-        self.btng = Button(text = 'Green', size = self.zoom, size_hint = (None, None), background_color = (0.2, 1, 0.2, 0.8))
-        self.btnbr = Button(text = 'Brown', size = self.zoom, size_hint = (None, None), background_color = (1, 0.5, 0.5, 0.8))
-        self.btnsave = Button(text = 'Save', size = self.zoom, size_hint = (None, None))
-        self.btnline = ToggleButton(state = 'down', group = 'state', background_normal = 'images/line.png', background_down = 'images/lined.png', size = self.zoom, size_hint = (None, None))
-        self.btnm = ToggleButton(group = 'state', background_normal = 'images/4_point.png', background_down = 'images/4_pointd.png', size = self.zoom, size_hint = (None, None))
-        self.btnc = ToggleButton(group = 'state', background_normal = 'images/cursor.png', background_down = 'images/cursord.png', size = self.zoom, size_hint = (None, None))
-        self.btndraw = ToggleButton(group = 'state', background_normal = 'images/draw.png',background_down = 'images/drawd.png', size = self.zoom, size_hint = (None, None))
-        self.btntile = ToggleButton(group = 'state', text = 'tile', size = self.zoom, size_hint = (None, None))
-        self.btnback = Button(background_normal = 'images/back.png', background_down = 'images/backd.png', size = self.zoom, size_hint = (None, None))
+        self.btnmenu = Button(text = 'Menu', size = self.size, size_hint = (None, None))
+        self.btnline = ToggleButton(state = 'down', group = 'state', background_normal = 'images/line.png', background_down = 'images/lined.png', size = self.size, size_hint = (None, None))
+        self.btnm = ToggleButton(group = 'state', background_normal = 'images/4_point.png', background_down = 'images/4_pointd.png', size = self.size, size_hint = (None, None))
+        self.btnc = ToggleButton(group = 'state', background_normal = 'images/cursor.png', background_down = 'images/cursord.png', size = self.size, size_hint = (None, None))
+        self.btndraw = ToggleButton(group = 'state', background_normal = 'images/draw.png', background_down = 'images/drawd.png', size = self.size, size_hint = (None, None))
+        self.btntile = ToggleButton(group = 'state', text = 'tile', size = self.size, size_hint = (None, None))
+        self.btnback = Button(background_normal = 'images/back.png', background_down = 'images/backd.png', size = self.size, size_hint = (None, None))
+        self.btnsettings = Button(background_normal = 'images/gear.png', background_down = 'images/geard.png', size = self.size, size_hint = (None, None))
+        self.color_slider = Slider(orientation = 'vertical', max = len(self.grid.colors)-1, min = 0, size_hint = (1, None), step = 1, height = height-40, value = len(self.grid.colors)-1)
+        self.tile_slider = Slider(orientation = 'vertical', max = len(self.grid.tiles)-1, min = 0, size_hint = (1, None), step = 1, height = height-40, value = 0)
+        
         
         #binds buttons to various functions
-        self.btnw.bind(on_release = self.color_change)
-        self.btnr.bind(on_release = self.color_change)
-        self.btnb.bind(on_release = self.color_change)
-        self.btny.bind(on_release = self.color_change)
-        self.btng.bind(on_release = self.color_change)
-        self.btnbr.bind(on_release = self.color_change)
-        self.btnsave.bind(on_release = self.save_load)
-        self.btnback.bind(on_release = self.undo)
+        self.btnmenu.bind(on_release = self.save_load)
+        self.btnback.bind(on_release = self.grid.undo)
         self.btnline.bind(on_release = self.toggle_straight)
         self.btnline.bind(on_press = self.select_type)
+        self.btnsettings.bind(on_release = self.upper.open_settings)
+        self.color_slider.bind(on_touch_move = self.value_change)
+        self.color_slider.bind(on_touch_up = self.clear)
+        self.tile_slider.bind(on_touch_move = self.tile_change)
+        self.tile_slider.bind(on_touch_up = self.clear)
         
-        self.ar.add_widget(self.btnw)
-        self.ar.add_widget(self.btnr)
-        self.ar.add_widget(self.btnb)
-        self.ar.add_widget(self.btny)
-        self.ar.add_widget(self.btng)
-        self.ar.add_widget(self.btnbr)
-        self.ar.add_widget(Widget())
+        self.ac.add_widget(Widget(height=20))
+        self.ac.add_widget(self.color_slider)
+        self.ac.add_widget(Widget())
         
-        self.al.add_widget(self.btnsave)
+        self.at.add_widget(Widget(height=20))
+        self.at.add_widget(self.tile_slider)
+        self.at.add_widget(Widget())
+        
+        self.ar.add_widget(self.ac)
+        
+        self.al.add_widget(self.btnmenu)
         self.al.add_widget(self.btnline)
         self.al.add_widget(self.btnm)
         self.al.add_widget(self.btnc)
@@ -189,167 +344,316 @@ class Platform_draw(Widget):
         self.al.add_widget(self.btntile)
         self.al.add_widget(self.btnback)
         self.al.add_widget(Widget())
+        self.al.add_widget(self.btnsettings)
         
-        #refreshes screen ... just lateral lines
-        self.lat, self.long, self.lines = set_zoom([], self.zoom)
+    
+class Platform_draw(Widget):
+
+    def undo(self, instance):  #removes the last line placed and then redraws the screen
+        self.lines = self.lines[:-1]
         self.refresh_screen()
         
+    def on_startup(self): #defines everything that needs to be defined before startup
+        #defines variables to be used
+        self.lines = []
+        self.coord = []
+        self.drawn_lines = []
+        self.polyline = None
+        self.straight_type = 'single'
+        self.lat = ()
+        self.longit = ()
+        self.old_x = self.old_y = 0
+        self.x = self.y = 0
+        self.size = (height/12, height/12)
+        self.colors = color_load()
+        self.tiles = []
+        self.currentTile = 0
+        self.tileset = []
+        self.color = self.colors[-1]
+        self.tileLayers = []
+        self.map = tmxlib.Map((width/self.zoom[0], height/self.zoom[1]), self.zoom)
+        for i in range(12):
+            self.tileLayers.append([])
+        self.currentLayer = 0
+        
+        #refreshes screen ... just lateral lines
+        self.lat, self.longit, self.lines = set_zoom([], self.zoom)
+        self.refresh_screen()
+    
     def refresh_screen(self):
         self.canvas.clear()
-        
-        # draws tiles
-        for tile in self.tile_list:
-            self.canvas.add(tile)
               
         #draws grid lines
         for x in self.lat:
-            self.canvas.add(Color(0, 0, 1))
+            self.canvas.add(Color(*self.gridColor))
             self.canvas.add(Line(points = (x, 0, x, height), width = 1))    
-        for y in self.long:
-            self.canvas.add(Color(0, 0, 1))
+        for y in self.longit:
+            self.canvas.add(Color(*self.gridColor))
             self.canvas.add(Line(points = (0, y, width, y), width = 1))
-            
-        if min(*self.lat) < 0:
-            self.lat[self.lat.index(min(*self.lat))] = max(*self.lat) + self.zoom[0]
-        if max(*self.lat) > width:
-            self.lat[self.lat.index(max(*self.lat))] = min(*self.lat) - self.zoom[0]
 
         #draws lines that the user has drawn
         for line in self.lines:
-            self.canvas.add(Color(*line[1]))
-            self.canvas.add(line[0])
+            line.draw(self.canvas)
+            # self.canvas.add(Color(*line[1]))
+            # self.canvas.add(line[0])
         for line in self.drawn_lines:
             self.canvas.add(Color(*line[1]))
             self.canvas.add(line[0])
             
+        # draws tiles
+        for tile in self.tileLayers[self.currentLayer]:
+            self.canvas.add(Color())
+            self.canvas.add(tile)
+            
+        with self.canvas:
+            Color(0.2, 0.2, 0.2)
+            Rectangle(pos = (0, height-height/12), size = (width, self.size[1]))
+            if len(self.upper.parent.children) > 0:
+                if self.upper.btnar.pos[0] == width-self.size[0]*1.5:
+                    Rectangle(pos = (width-self.size[0], 0), size = (self.size[0], height))
+            
     def on_touch_down(self, touch): #defines the starting point of a new line
-        if self.btnc.state == 'down':
-            eraser = Ellipse(size = (height/18, height/18), pos=(touch.x-(height/36), touch.y-(height/36)))
+        if self.ui.btnc.state == 'down':
+            eraser = Ellipse(size = (height/14, height/14), pos=(touch.x-(height/28), touch.y-(height/28)))
             self.canvas.add(Color(1, 1, 1, 1))
             self.canvas.add(eraser)
             check_erase(eraser.pos, self.lines, self.drawn_lines)
-        if self.btnline.state == 'down' or self.btntile.state == 'down':
+        if self.ui.btnline.state == 'down' or self.ui.btntile.state == 'down':
             self.coord = [[touch.x, touch.y]]
+        if self.ui.btntile.state == 'down' and len(self.tiles) > 0:
+            tile  = Drawable(Rectangle, color = None, texture = self.tiles[self.currentTile].tile, pos = touch.pos, size = (self.tiles[self.currentTile].size[0] * self.zoom[0], self.tiles[self.currentTile].size[1] * self.zoom[1]))
+            # self.tileLayers[self.currentLayer].append(tile)
+            tile.snap(list(touch.pos), self.zoom, self.lat, self.longit)
+            self.lines.append(tile)
+            self.coord = []
+            self.refresh_screen()
+        if self.ui.btndraw.state == 'down':
+            self.polyline = Polyline(self.color)
         else: self.coord = []
         self.old_x, self.old_y = touch.x, touch.y
         
     def on_touch_up(self, touch):
-        if self.x == 0 or self.y == 0 or [0,0] in self.coord:
+        if self.x == 0 or self.y == 0 or [0, 0] in self.coord:
             self.x, self.y = touch.x, touch.y #sets the start point of line
-        if self.btntile.state == 'down' and len(self.tiles) > 0 and self.coord:
-            pos = snap_image(self.coord[0], self.zoom, self.lat)
-            tile  = Rectangle(texture = self.tiles[self.current_tile], pos = pos, size = self.zoom)
-            self.tile_list.append(tile)
-            self.coord = []
-            self.refresh_screen()
-            self.current_tile += 1
-        if self.coord and self.btnline.state == 'down' and self.straight_type == 'single':
+        if self.coord and self.ui.btnline.state == 'down' and self.straight_type == 'single' and touch.y < height-height/12:
             self.coord.append([touch.x, touch.y]) #defines end point of new line
-            self.coord = snap_to(self.coord, self.zoom, self.lat) #moves points onto grid
-            if self.coord[0] == self.coord[1]:
+            line = Drawable(Line, color = self.color, points = (self.coord[0][0], self.coord[0][1], self.coord[1][0], self.coord[1][1]), width = 2)
+            if not line.snap(self.coord, self.zoom, self.lat, self.longit):
                 return
-            line = [Line(points = (self.coord[0][0], self.coord[0][1], self.coord[1][0], self.coord[1][1]), width = 2), self.color]
             if not line in self.lines:
                 self.lines.append(line)
             self.coord = []
             self.refresh_screen()
+        if self.ui.btndraw.state == 'down' and self.polyline != None:
+            self.lines.append(self.polyline)
+            self.polyline = None
+            self.coord = []
+            self.drawn_lines = []
+            self.refresh_screen()
         self.old_x, self.old_y = touch.x, touch.y
         self.x = self.y = 0 # resets variables for finger lines
     def on_touch_move(self, touch):
-        if self.btnc.state == 'down':
+        if self.x == 0 or self.y == 0 or [0, 0] in self.coord:
+            self.x, self.y = touch.x, touch.y #sets the start point of line
+        if self.ui.btnc.state == 'down':
             self.refresh_screen()
-            eraser = Ellipse(size = (height/18, height/18), pos=(touch.x-(height/36), touch.y-(height/36)))
+            eraser = Ellipse(size = (height/14, height/14), pos=(touch.x-(height/28), touch.y-(height/28)))
             self.canvas.add(Color(1, 1, 1, 1))
             self.canvas.add(eraser)
             check_erase(eraser.pos, self.lines, self.drawn_lines)
-        if self.btnline.state == 'down' or self.btndraw.state == 'down':
+        if self.ui.btnline.state == 'down' or self.ui.btndraw.state == 'down' and touch.y < height-height/12:
             if not self.coord:
                 self.coord = [[touch.x, touch.y]] #used as a start point if finger just entered screen
             self.refresh_screen()
             self.canvas.add(Color(*self.color))
             coord_temp = [[self.x, self.y], [touch.x, touch.y]]
-            if self.straight_type == 'single' and self.btnline.state == 'down':
+            if self.straight_type == 'single' and self.ui.btnline.state == 'down':
                 coord_temp[0] = self.coord[0]
-                coord_temp = snap_to(coord_temp, self.zoom, self.lat)
-            elif self.btnline.state == 'down':
-                if self.x == 0 or self.y == 0 or [0,0] in self.coord:
+                line = Drawable(Line, color = self.color, points = (coord_temp[0][0], coord_temp[0][1], coord_temp[1][0], coord_temp[1][1]), width = 1)
+                line.snap(coord_temp, self.zoom, self.lat, self.longit)
+                line.draw(self.canvas)
+            elif self.ui.btnline.state == 'down':
+                if self.x == 0 or self.y == 0 or [0, 0] in self.coord:
                     self.x, self.y = touch.x, touch.y #sets the start point of line
                     return
-                coord_temp = snap_to(coord_temp, self.zoom, self.lat)
-                if coord_temp[0] == coord_temp[1]:
+                line = Drawable(Line, color = self.color, points = (coord_temp[0][0], coord_temp[0][1], coord_temp[1][0], coord_temp[1][1]), width = 2)
+                if not line.snap(coord_temp, self.zoom, self.lat, self.longit):
                     return
-                line = [Line(points = (coord_temp[0][0], coord_temp[0][1], coord_temp[1][0], coord_temp[1][1]), width = 2), self.color]
                 if not line in self.lines:
                     self.lines.append(line)
-            line = Line(points = (coord_temp[0][0], coord_temp[0][1], coord_temp[1][0], coord_temp[1][1]), width = 1)  #draws a line that follows the users finger
-            if self.btndraw.state == 'down':
-                self.drawn_lines.append([line, self.color])
-                self.coord = []
-            self.canvas.add(line)
+            if self.ui.btndraw.state == 'down' and self.polyline != None:
+                self.polyline.add_line(coord_temp[0][0], coord_temp[0][1], coord_temp[1][0], coord_temp[1][1])
+                self.drawn_lines.append([Line(points = (coord_temp[0][0], coord_temp[0][1], coord_temp[1][0], coord_temp[1][1])), self.color])
             self.x, self.y = touch.x, touch.y #updates points
+            
+        if self.ui.btntile.state == 'down' and len(self.tiles) > 0:
+            if touch.y > height-height/12 or touch.x > width - height/12:
+                return
+            tile  = Drawable(Rectangle, color = None, texture = self.tiles[self.currentTile].tile, pos = touch.pos, size = (self.tiles[self.currentTile].size[0] * self.zoom[0], self.tiles[self.currentTile].size[1] * self.zoom[1]))
+            # self.tileLayers[self.currentLayer].append(tile)
+            tile.snap(list(touch.pos), self.zoom, self.lat, self.longit)
+            self.lines.append(tile)
+            self.coord = []
+            self.refresh_screen()
              
-        elif self.btnm.state == 'down':
+        elif self.ui.btnm.state == 'down':
+            if touch.x > width - height/12 or touch.y > height-height/12:
+                return
             movex = touch.x - self.old_x
-            for line in range(len(self.lines)):
-                points = (self.lines[line][0].points[0] + movex, self.lines[line][0].points[1], self.lines[line][0].points[2] + movex, self.lines[line][0].points[3])
-                self.lines[line][0] = Line(points = points, width = 2)
+            movey = touch.y - self.old_y
+            for line in self.lines:
+                line.move(movex, movey)
             for line in range(len(self.drawn_lines)):
-                points = (self.drawn_lines[line][0].points[0] + movex, self.drawn_lines[line][0].points[1], self.drawn_lines[line][0].points[2] + movex, self.drawn_lines[line][0].points[3])
+                points = (self.drawn_lines[line][0].points[0] + movex, self.drawn_lines[line][0].points[1] + movey, self.drawn_lines[line][0].points[2] + movex, self.drawn_lines[line][0].points[3] + movey)
                 self.drawn_lines[line][0] = Line(points = points, width = 1)
             for line in range(len(self.lat)):
                 self.lat[line] += movex
+            for line in range(len(self.longit)):
+                self.longit[line] += movey
             self.refresh_screen()
             self.old_x, self.old_y = touch.x, touch.y
+            
+            # ensures that their are always grid lines on the screen
+            while min(*self.lat) < 0:
+                self.lat[self.lat.index(min(*self.lat))] = max(*self.lat) + self.zoom[0]
+            while max(*self.lat) > width:
+                self.lat[self.lat.index(max(*self.lat))] = min(*self.lat) - self.zoom[0]
+            while min(*self.longit) < 0:
+                self.longit[self.longit.index(min(*self.longit))] = max(*self.longit) + self.zoom[0]
+            while max(*self.longit) > height:
+                self.longit[self.longit.index(max(*self.longit))] = min(*self.longit) - self.zoom[0]
             
             
 
 class PlatformApp(App):
     title = ''
     icon = 'images/4_pointd.png'
+    use_kivy_settings = False
     def settings(self, instance): # settings panel
         if instance.pos[0] == 0:
             self.btnal.pos = (self.zoom[0], height-self.zoom[1]*1.5)
             self.btnal.text = '<'
-            self.parent.add_widget(self.main.al)
+            self.parent.add_widget(self.ui.al)
+            
         elif instance.pos[0] == self.zoom[0]:
             self.btnal.pos = (0, height-self.zoom[1]*1.5)
             self.btnal.text = '>'
-            self.parent.remove_widget(self.main.al)
-            
+            self.parent.remove_widget(self.ui.al)
+        
     def color_choose(self, instance): # colours/tile panel
         if instance.pos[0] == width-self.zoom[0]/2:
             self.btnar.pos = (width-self.zoom[0]*1.5, height-self.zoom[1]*1.5)
             self.btnar.text = '>'
-            self.parent.add_widget(self.main.ar)
+            self.parent.add_widget(self.ui.ar)
+            
         elif instance.pos[0] == width-self.zoom[0]*1.5:
             self.btnar.pos = (width-self.zoom[0]/2, height-self.zoom[1]*1.5)
             self.btnar.text = '<'
-            self.parent.remove_widget(self.main.ar)
+            self.parent.remove_widget(self.ui.ar)
+            
+        self.ui.ar.clear_widgets()
+        if self.ui.btntile.state == 'down':
+            self.ui.ar.add_widget(self.ui.at)
+        else:
+            self.ui.ar.add_widget(self.ui.ac)
+        self.grid.refresh_screen()
             
     def build(self):
+        self.config = ConfigParser()
+        self.config.read(self.directory + '/' + 'config.ini')
         self.parent = Widget()
-        self.main = Platform_draw()
-        self.main.on_startup()
-        self.main.lat, self.main.long, self.main.lines = set_zoom([], self.main.zoom)
-        self.main.directory = self.directory
-        self.main.upper = self
-        self.zoom = self.main.zoom
-        #adds the self.main class
-        self.parent.add_widget(self.main)
+        self.parent.canvas.clear()
+        self.parent.canvas.add(Color(0, 0, 0))
+        self.parent.canvas.add(Rectangle(size=(width, height)))
+        self.grid = Platform_draw()
+        self.ui = UI()
+        self.grid.ui = self.ui
+        self.ui.grid = self.grid
+        
+        try: 
+            zoom = int(self.config.get('platform', 'zoom'))
+            self.grid.zoom = (zoom, zoom)
+        except:
+            self.grid.zoom = (height/12, height/12)
+        try:
+            gridR = int(self.config.get('colors', 'r'))
+        except:
+            gridR = 0
+        try:
+            gridG = int(self.config.get('colors', 'g'))
+        except:
+            gridG = 0
+        try:
+            gridB = int(self.config.get('colors', 'b'))
+        except:
+            gridB = 1
+        
+        self.grid.gridColor = (gridR/255.0, gridG/255.0, gridB/255.0)
+        self.grid.directory = self.directory
+        self.grid.upper = self
+        self.ui.upper = self
+        self.grid.on_startup()
+        self.ui.on_startup()
+        self.grid.lat, self.grid.longit, self.grid.lines = set_zoom([], self.grid.zoom)
+        self.zoom = self.grid.size
+        #adds the main classes
+        self.parent.add_widget(self.grid)
+        self.parent.add_widget(self.ui)
         
         # creates buttons
         self.btnar = Button(text = '<', pos = (width-self.zoom[0]/2, height-self.zoom[1]*1.5), size=(self.zoom[0]/2, self.zoom[1]))
         self.btnal = Button(text = '>', pos = (0, height-self.zoom[1]*1.5), size=(self.zoom[0]/2, self.zoom[1]))
+        self.zoom_slider = Slider(orientation = 'horizontal', size = (width - height/3, height/12), pos = (height/6, height-height/12), max = height/6, min = 20, value = self.zoom[1], step = 1)
         
         self.btnal.bind(on_release = self.settings)
         self.btnar.bind(on_release = self.color_choose)
+        self.zoom_slider.bind(on_touch_move = self.ui.value_zoom)
         
         # adds buttons to screen
         
         self.parent.add_widget(self.btnal)
         self.parent.add_widget(self.btnar)
+        self.parent.add_widget(self.zoom_slider)
        
         return self.parent
-        
+    def build_settings(self, settings):
+        settings.add_json_panel('Defaults', self.config, self.directory + '/' + 'settings.json')
+    
+    def on_config_change(self, config, section, key, value):
+        if config is self.config:
+            token = (section, key)
+            if token == ('platform', 'zoom'):
+                new_zoom = (int(value), int(value))
+                self.grid.lat, self.grid.longit, self.grid.lines = set_zoom(self.grid.lines, new_zoom, self.grid.zoom, self.grid.lat, self.grid.longit)
+                self.grid.zoom = (float(value), float(value))
+                self.zoom_slider.value = float(value)
+            elif token[0] == 'colors':
+                try:
+                    gridR = int(self.config.get('colors', 'r'))
+                except:
+                    gridR = 0
+                try:
+                    gridG = int(self.config.get('colors', 'g'))
+                except:
+                    gridG = 0
+                try:
+                    gridB = int(self.config.get('colors', 'b'))
+                except:
+                    gridB = 1
+                self.grid.gridColor = (gridR/255.0, gridG/255.0, gridB/255.0)
+                # try:
+                    # backR = int(self.config.get('colors', 'rb'))
+                # except:
+                    # backR = 0
+                # try:
+                    # backG = int(self.config.get('colors', 'gb'))
+                # except:
+                    # back = 0
+                # try:
+                    # backB = int(self.config.get('colors', 'bb'))
+                # except:
+                    # backB = 0
+                # self.parent.canvas.add(Color(backR/255.0, backG/255.0, backB/255.0))
+            self.grid.refresh_screen()
 if __name__ in ('__android', '__main__'):
     PlatformApp().run()
