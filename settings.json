@@ -1,0 +1,67 @@
+[
+    {
+        "type": "title",
+        "title": "Zoom"
+    },
+    {
+        "type": "numeric",
+        "title": "Zoom level in pixels",
+        "desc": "Used for x and y zoom (20-100)",
+        "section": "platform",
+        "key": "zoom"
+    },
+    {
+        "type": "title",
+        "title": "Colors"
+    },
+    {
+        "type": "title",
+        "title": "Grid Lines"
+    },
+    {
+        "type": "numeric",
+        "title": "R",
+        "desc": "Amount of Red to use (0-255)",
+        "section": "colors",
+        "key": "r"
+    },
+    {
+        "type": "numeric",
+        "title": "G",
+        "desc": "Amount of Green to use (0-255))",
+        "section": "colors",
+        "key": "g"
+    },
+    {
+        "type": "numeric",
+        "title": "B",
+        "desc": "Amount of Blue to use (0-255)",
+        "section": "colors",
+        "key": "b"
+    },
+    {
+        "type": "title",
+        "title": "Background"
+    },
+    {
+        "type": "numeric",
+        "title": "R",
+        "desc": "Amount of Red to use (0-255)",
+        "section": "colors",
+        "key": "rb"
+    },
+    {
+        "type": "numeric",
+        "title": "G",
+        "desc": "Amount of Green to use (0-255))",
+        "section": "colors",
+        "key": "gb"
+    },
+    {
+        "type": "numeric",
+        "title": "B",
+        "desc": "Amount of Blue to use (0-255)",
+        "section": "colors",
+        "key": "bb"
+    }
+]
